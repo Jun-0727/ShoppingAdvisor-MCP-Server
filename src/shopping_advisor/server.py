@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field, ValidationError
 from openai import AsyncOpenAI
 
-from utils.prompt_template import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+from .utils.prompt_template import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 
 # ============================================================================
 # API 클라이언트 초기화
@@ -124,10 +124,7 @@ async def get_product(product_name: str) -> Optional[dict]:
         print("정보 조회 실패")
         return None
     
-    
-# 실행
-#if __name__ == "__main__":
-#    
-#    # 테스트 실행
-#    asyncio.run(get_product("무선 이어폰"))
 
+def main():
+    """MCP 서버 실행"""
+    mcp.run()
