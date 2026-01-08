@@ -126,8 +126,8 @@ async def get_product(product_name: str) -> Optional[dict]:
     
     
 # 실행
-if __name__ == "__main__":
-    
-    # 테스트 실행
-    asyncio.run(get_product("무선 이어폰"))
+#if __name__ == "__main__":
+#    
+#    # 테스트 실행
+#    asyncio.run(get_product("무선 이어폰"))
 
