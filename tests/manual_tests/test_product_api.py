@@ -17,7 +17,7 @@ sys.path.insert(0, str(project_root / "src"))
 load_dotenv(project_root / ".env")
 
 
-from shopping_advisor.server import product_info_request
+from shopping_advisor.utils.product_api import product_info_request
 
 async def test_single_product():
     """단일 제품 테스트"""
