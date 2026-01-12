@@ -1,4 +1,4 @@
-"""쇼핑몰 URL 생성 유틸리티"""
+"""쇼핑몰 유틸리티 모듈"""
 
 import json
 from pathlib import Path
@@ -11,7 +11,12 @@ from urllib.parse import quote
 # ============================================================================
 
 def load_shopping_malls() -> Dict:
-    """쇼핑몰 데이터 로드"""
+    """쇼핑몰 데이터 로드
+    
+    Returns:
+        Dict: 쇼핑몰 데이터 딕셔너리
+    """
+    
     data_path = Path(__file__).parent.parent / "data" / "shopping_malls.json"
     
     try:
@@ -54,24 +59,38 @@ def get_mall_detail(mall_name: str) -> Optional[Dict]:
     return SHOPPING_MALLS.get(mall_name)
 
 
-def get_mall_pros_cons(mall_name: str) -> Optional[Dict[str, List[str]]]:
-    """쇼핑몰 장단점 조회
+def get_mall_pros(mall_name: str) -> Optional[Dict[str, List[str]]]:
+    """쇼핑몰 장점 조회
     
     Args:
         mall_name (str): 쇼핑몰 이름
         
     Returns:
-        Optional[Dict[str, List[str]]]: 장단점 딕셔너리 또는 None
+        Optional[Dict[str, List[str]]]: 장점 딕셔너리 또는 None
     """
-    mall_data = SHOPPING_MALLS.get(mall_name)
+    mall_data = get_mall_detail(mall_name)
+    
+    if not mall_data:
+        return None
+
+    return mall_data.get("pros", [])
+
+
+def get_mall_cons(mall_name: str) -> Optional[Dict[str, List[str]]]:
+    """쇼핑몰 단점 조회
+    
+    Args:
+        mall_name (str): 쇼핑몰 이름
+        
+    Returns:
+        Optional[Dict[str, List[str]]]: 단점 딕셔너리 또는 None
+    """
+    mall_data = get_mall_detail(mall_name)
     
     if not mall_data:
         return None
     
-    return {
-        "pros": mall_data.get("pros", []),
-        "cons": mall_data.get("cons", [])
-    }
+    return mall_data.get("cons", [])
 
 
 def get_mall_best_for(mall_name: str) -> Optional[List[str]]:
@@ -83,7 +102,7 @@ def get_mall_best_for(mall_name: str) -> Optional[List[str]]:
     Returns:
         Optional[List[str]]: 추천 카테고리 리스트 또는 None
     """
-    mall_data = SHOPPING_MALLS.get(mall_name)
+    mall_data = get_mall_detail(mall_name)
     
     if not mall_data:
         return None
@@ -92,7 +111,7 @@ def get_mall_best_for(mall_name: str) -> Optional[List[str]]:
 
 
 def get_mall_feature(mall_name: str) -> Optional[str]:
-    """쇼핑몰 설명 조회
+    """쇼핑몰 특징 조회
     
     Args:
         mall_name (str): 쇼핑몰 이름
@@ -100,7 +119,7 @@ def get_mall_feature(mall_name: str) -> Optional[str]:
     Returns:
         Optional[str]: 쇼핑몰 설명 또는 None
     """
-    mall_data = SHOPPING_MALLS.get(mall_name)
+    mall_data = get_mall_detail(mall_name)
     
     if not mall_data:
         return None
@@ -108,26 +127,25 @@ def get_mall_feature(mall_name: str) -> Optional[str]:
     return mall_data.get("description")
 
 
-
 def generate_shopping_url(mall_name: str, product_name: str) -> Optional[str]:
     """쇼핑몰 URL 생성
     
     Args:
-        mall_name (str): 쇼핑몰 이름 (예: "쿠팡", "네이버쇼핑")
-        product_name (str): 검색할 제품명 (예: "오리발")
+        mall_name (str): 쇼핑몰 이름 (예: "쿠팡")
+        product_name (str): 검색할 제품명 (예: "iPhone 17")
         
     Returns:
         Optional[str]: 생성된 URL 또는 None (실패 시)
         
     Examples:
-        >>> generate_shopping_url("쿠팡", "iPhone 17")
-        'https://www.coupang.com/np/search?q=iPhone+17'
+        generate_shopping_url("쿠팡", "iPhone 17") 
+        >>> 'https://www.coupang.com/np/search?q=iPhone+17'
     """
     if not mall_name or not product_name:
         return None
     
     # 쇼핑몰 데이터 조회
-    mall_data = SHOPPING_MALLS.get(mall_name)
+    mall_data = get_mall_detail(mall_name)
     
     if not mall_data:
         print(f"Error: '{mall_name}' 쇼핑몰을 찾을 수 없습니다.")
@@ -147,3 +165,4 @@ def generate_shopping_url(mall_name: str, product_name: str) -> Optional[str]:
     url = url_template.format(encoded_product)
     
     return url
+

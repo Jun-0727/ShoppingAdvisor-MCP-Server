@@ -12,7 +12,8 @@ from shopping_advisor.utils.shopping_mall import (
     get_mall_all,
     get_mall_detail,
     get_mall_feature,
-    get_mall_pros_cons,
+    get_mall_pros,
+    get_mall_cons,
     get_mall_best_for
 )
 
@@ -24,7 +25,7 @@ def test_generate_url():
     print("=" * 60)
     
     mall = input("쇼핑몰 이름 (예: 쿠팡): ").strip() or "쿠팡"
-    product = input("제품명 (예: 오리발): ").strip() or "오리발"
+    product = input("제품명 (예: iPhone 17): ").strip() or "iPhone 17"
     
     print(f"\n🔍 {mall}에서 '{product}' 검색 URL 생성 중...\n")
     
@@ -37,7 +38,7 @@ def test_generate_url():
         print(f"❌ 실패")
 
 
-def test_available_malls():
+def test_get_malls():
     """사용 가능한 쇼핑몰 목록 테스트"""
     print("\n" + "=" * 60)
     print("테스트 3: 사용 가능한 쇼핑몰 목록")
@@ -77,10 +78,10 @@ def main():
     """메인 메뉴"""
     while True:
         print("\n" + "=" * 60)
-        print("쇼핑몰 URL 생성기 테스트 메뉴")
+        print("쇼핑몰 유틸리티 모듈 테스트 메뉴")
         print("=" * 60)
-        print("1. 단일 URL 생성")
-        print("2. 사용 가능한 쇼핑몰 목록")
+        print("1. URL 생성")
+        print("2. 쇼핑몰 목록 조회")
         print("3. 쇼핑몰 정보 조회")
         print("4. 종료")
         print("=" * 60)
@@ -90,7 +91,7 @@ def main():
         if choice == "1":
             test_generate_url()
         elif choice == "2":
-            test_available_malls()
+            test_get_malls()
         elif choice == "3":
             test_mall_info()
         elif choice == "4":
