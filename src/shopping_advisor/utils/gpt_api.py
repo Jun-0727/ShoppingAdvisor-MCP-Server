@@ -7,7 +7,12 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field, ValidationError
 from openai import AsyncOpenAI
 
-from ..utils.prompt_template import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+from ..utils.prompt_template import (
+    GET_PRODUCT_SYSTEM_PROMPT,
+    GET_PRODUCT_USER_PROMPT,
+    RECOMMEND_SHOPPING_MALL_SYSTEM_PROMPT,
+    RECOMMEND_SHOPPING_MALL_USER_PROMPT
+)
 
 # ============================================================================
 # API 클라이언트 초기화
@@ -46,7 +51,15 @@ class ProductInfo(BaseModel):
 # ============================================================================
 
 async def product_info_request(product_name: str) -> Optional[dict]:
-    """외부 API를 통해 제품 정보를 조회합니다."""
+    """
+    외부 API를 통해 제품 정보를 조회합니다.
+    
+    Args:
+        product_name (str): 제품명 또는 카테고리 이름
+
+    Returns:
+        Optional[dict]: 제품 정보 딕셔너리 또는 None if 실패
+    """
     
     # API Key 확인
     if not client:
@@ -55,13 +68,13 @@ async def product_info_request(product_name: str) -> Optional[dict]:
     
     try:
         # 사용자 프롬프트 생성
-        user_prompt = USER_PROMPT_TEMPLATE.format(product_name=product_name)
+        user_prompt = GET_PRODUCT_USER_PROMPT.format(product_name=product_name)
 
         # GPT API 호출
         response = await client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": GET_PRODUCT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.7,  # 창의성과 일관성 균형
@@ -88,6 +101,56 @@ async def product_info_request(product_name: str) -> Optional[dict]:
     
     except ValidationError as e:
         print(f"Error: 데이터 검증 실패 - {e}")
+        return None
+
+    except Exception as e:
+        print(f"Error: API 호출 중 오류 발생 - {type(e).__name__}: {e}")
+        return None
+
+
+async def mall_recommend_request(product_name: str) -> Optional[dict]:
+    """
+    제품을 어디서 사는 것이 좋은지 쇼핑몰을 추천합니다.
+
+    Args:
+        product_name (str): 제품명 또는 카테고리 이름
+
+    Returns:
+        Optional[dict]: 쇼핑몰 추천 정보 딕셔너리 또는 None if 실패
+    """
+    
+    # API Key 확인
+    if not client:
+        raise ValueError("API KEY가 조회되지 않습니다.")
+        return None
+    
+    try:
+        # 사용자 프롬프트 생성
+        user_prompt = RECOMMEND_SHOPPING_MALL_USER_PROMPT.format(product_name=product_name)
+
+        # GPT API 호출
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": RECOMMEND_SHOPPING_MALL_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,  # 창의성과 일관성 균형
+            max_tokens=1000,  # 충분한 응답 길이
+            response_format={"type": "json_object"}  # JSON 모드 활성화
+        )
+
+        # 응답 추출
+        content = response.choices[0].message.content
+
+        # JSON 파싱
+        parsed_data = json.loads(content)
+
+        return parsed_data
+
+    except json.JSONDecodeError as e:
+        print(f"Error: JSON 파싱 실패 - {e}")
+        print(f"응답 내용: {content}")
         return None
 
     except Exception as e:
