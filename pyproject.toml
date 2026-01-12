@@ -1,7 +1,7 @@
 [project]
 name = "shopping-advisor"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI 쇼핑 어드바이저 MCP 서버 - 제품 특징, 쇼핑몰 비교, 구매 가이드 제공"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
