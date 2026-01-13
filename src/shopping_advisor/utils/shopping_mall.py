@@ -1,10 +1,14 @@
 """쇼핑몰 유틸리티 모듈"""
 
 import json
+import logging
 from pathlib import Path
 from typing import Optional, Dict, List
 from urllib.parse import quote
 
+
+# 로깅 설정
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # 데이터 로드
@@ -23,10 +27,10 @@ def load_shopping_malls() -> Dict:
         with open(data_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"Error: {data_path} 파일을 찾을 수 없습니다.")
+        logger.error(f"쇼핑몰 데이터 파일을 찾을 수 없습니다: {data_path}")
         return {}
     except json.JSONDecodeError as e:
-        print(f"Error: JSON 파싱 실패 - {e}")
+        logger.error(f"JSON 파싱 실패: {e}", exc_info=True)
         return {}
 
 
@@ -148,8 +152,10 @@ def generate_shopping_url(mall_name: str, product_name: str) -> Optional[str]:
     mall_data = get_mall_detail(mall_name)
     
     if not mall_data:
-        print(f"Error: '{mall_name}' 쇼핑몰을 찾을 수 없습니다.")
-        print(f"사용 가능한 쇼핑몰: {', '.join(SHOPPING_MALLS.keys())}")
+        logger.warning(
+            f"'{mall_name}' 쇼핑몰을 찾을 수 없습니다. "
+            f"사용 가능한 쇼핑몰: {', '.join(SHOPPING_MALLS.keys())}"
+        )
         return None
     
     # URL 인코딩
@@ -157,7 +163,7 @@ def generate_shopping_url(mall_name: str, product_name: str) -> Optional[str]:
     try:
         encoded_product = quote(product_name, encoding=encoding)
     except Exception as e:
-        print(f"Error: URL 인코딩 실패 - {e}")
+        logger.error(f"URL 인코딩 실패: {e}", exc_info=True)
         return None
     
     # URL 생성

@@ -59,6 +59,7 @@ htmlcov/
 dmypy.json
 
 # Logs
+logs/
 *.log
 
 # Distribution / packaging

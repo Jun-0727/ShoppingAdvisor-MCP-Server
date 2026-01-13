@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 
 from dotenv import load_dotenv
 from typing import Any, Dict, List, Optional
@@ -15,6 +16,9 @@ from ..utils.prompt_template import (
     COMPARE_PRODUCTS_SYSTEM_PROMPT,
     COMPARE_PRODUCTS_USER_PROMPT
 )
+
+# 로깅 설정
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # API 클라이언트 초기화
@@ -67,8 +71,8 @@ async def product_info_request(product_name: str) -> Optional[dict]:
     
     # API Key 확인
     if not client:
+        logger.error("OpenAI API KEY가 설정되지 않았습니다.")
         raise ValueError("API KEY가 조회되지 않습니다.")
-        return None
     
     try:
         # 사용자 프롬프트 생성
@@ -99,16 +103,16 @@ async def product_info_request(product_name: str) -> Optional[dict]:
         return validated_data.model_dump()
 
     except json.JSONDecodeError as e:
-        print(f"Error: JSON 파싱 실패 - {e}")
-        print(f"응답 내용: {content}")
+        logger.error(f"JSON 파싱 실패: {e}", exc_info=True)
+        logger.debug(f"응답 내용: {content}")
         return None
     
     except ValidationError as e:
-        print(f"Error: 데이터 검증 실패 - {e}")
+        logger.error(f"데이터 검증 실패: {e}", exc_info=True)
         return None
 
     except Exception as e:
-        print(f"Error: API 호출 중 오류 발생 - {type(e).__name__}: {e}")
+        logger.error(f"API 호출 중 오류 발생: {type(e).__name__}: {e}", exc_info=True)
         return None
 
 
@@ -125,8 +129,8 @@ async def mall_recommend_request(product_name: str) -> Optional[dict]:
     
     # API Key 확인
     if not client:
+        logger.error("OpenAI API KEY가 설정되지 않았습니다.")
         raise ValueError("API KEY가 조회되지 않습니다.")
-        return None
     
     try:
         # 사용자 프롬프트 생성
@@ -153,12 +157,12 @@ async def mall_recommend_request(product_name: str) -> Optional[dict]:
         return parsed_data
 
     except json.JSONDecodeError as e:
-        print(f"Error: JSON 파싱 실패 - {e}")
-        print(f"응답 내용: {content}")
+        logger.error(f"JSON 파싱 실패: {e}", exc_info=True)
+        logger.debug(f"응답 내용: {content}")
         return None
 
     except Exception as e:
-        print(f"Error: API 호출 중 오류 발생 - {type(e).__name__}: {e}")
+        logger.error(f"API 호출 중 오류 발생: {type(e).__name__}: {e}", exc_info=True)
         return None
 
 
@@ -183,11 +187,12 @@ async def compare_products_request(product_names: List[str],comparison_points: O
     
     # 입력 검증
     if not product_names or len(product_names) < 2:
-        print("Error: 최소 2개 이상의 제품이 필요합니다.")
+        logger.warning("제품 비교 요청 실패: 최소 2개 이상의 제품이 필요합니다.")
         return None
     
     # API Key 확인
     if not client:
+        logger.error("OpenAI API KEY가 설정되지 않았습니다.")
         raise ValueError("API KEY가 조회되지 않습니다.")
     
     try:
@@ -223,11 +228,11 @@ async def compare_products_request(product_names: List[str],comparison_points: O
         return parsed_data
         
     except json.JSONDecodeError as e:
-        print(f"Error: JSON 파싱 실패 - {e}")
-        print(f"응답 내용: {content}")
+        logger.error(f"JSON 파싱 실패: {e}", exc_info=True)
+        logger.debug(f"응답 내용: {content}")
         return None
         
     except Exception as e:
-        print(f"Error: API 호출 중 오류 발생 - {type(e).__name__}: {e}")
+        logger.error(f"API 호출 중 오류 발생: {type(e).__name__}: {e}", exc_info=True)
         return None
 
