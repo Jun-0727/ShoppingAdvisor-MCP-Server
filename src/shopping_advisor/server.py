@@ -34,9 +34,23 @@ mcp = FastMCP("shopping-advisor")
 # MCP Tools (주요 기능)
 # ============================================================================
 
-@mcp.tool(name="get_product")
+@mcp.tool(name="get_product", description="제품명을 기반으로 제품의 특징, 장점, 단점, 구매 시 확인사항을 제공합니다.")
 async def get_product(product_name: str) -> Optional[dict]:
-    """제품명 또는 카테고리를 기반으로 제품의 특징, 장점, 단점, 구매 시 확인사항을 제공합니다."""
+    """
+    제품 정보를 조회하여 구매 결정에 필요한 핵심 정보를 제공합니다.
+    
+    - 제품의 주요 특징 및 사양
+    - 장점 (Pros): 제품의 강점과 우수한 점
+    - 단점 (Cons): 제품의 약점과 개선이 필요한 점
+    - 구매 시 확인사항: 구매 전 반드시 체크해야 할 항목들
+    
+    Args:
+        product_name: 조회할 제품의 이름 또는 카테고리 (예: "iPhone 15", "노트북", "무선 이어폰")
+    
+    Returns:
+        제품 정보를 포함한 딕셔너리 또는 제품을 찾을 수 없는 경우 None
+
+    """
     
     logger.info(f"제품 정보 조회 시작: {product_name}")
     
@@ -61,9 +75,18 @@ async def get_product(product_name: str) -> Optional[dict]:
 
 
 
-@mcp.tool(name="create_shopping_guide")
+@mcp.tool(name="create_shopping_guide", description="제품명을 기반으로 구매 가이드를 생성하여 선택 기준, 주의사항, 추천 쇼핑몰 등을 제공합니다.")
 async def create_shopping_guide(product_name: str) -> Optional[dict]:
-    """제품명을 기반으로 제품 구매 가이드를 제공합니다."""
+    """
+    제품명을 기반으로 제품 구매 가이드를 제공합니다.
+    
+    Args:
+        product_name: 구매 가이드를 생성할 제품명 (예: "4K 모니터", "공기청정기", "커피머신")
+    
+    Returns:
+        구매 가이드 정보를 포함한 딕셔너리 또는 가이드 생성 실패 시 None
+        
+    """
     
     logger.info(f"쇼핑 가이드 생성 시작: {product_name}")
 
@@ -94,9 +117,26 @@ async def create_shopping_guide(product_name: str) -> Optional[dict]:
         return ERROR_MESSAGE
 
 
-@mcp.tool(name="compare_products")
+@mcp.tool(name="compare_products", description="2개 이상의 제품을 비교하여 각 제품의 장단점, 사양 비교, 사용 사례별 추천, 가성비 분석을 제공합니다.")
 async def compare_products(product_names: List[str],comparison_points: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
-    """제품명을 기반으로 N개의 제품을 비교 및 요약 정보를 제공합니다. """
+    """
+    여러 제품을 비교 분석하여 각 제품의 상대적 장단점과 추천 사항을 제공합니다.
+    
+    Args:
+        product_names: 비교할 제품명 리스트 (최소 2개, 권장 2-5개)
+            예: ["iPhone 15", "Galaxy S24"]
+        
+        comparison_points: (선택사항) 비교할 특정 항목 리스트
+            예: ["카메라 성능", "배터리 수명", "가격"]
+            None인 경우 제품 카테고리에 적합한 기본 비교 항목 사용
+    
+    Returns:
+        비교 분석 결과를 포함한 딕셔너리 또는 비교 실패 시 None
+        
+    Notes:
+        - 너무 많은 제품(5개 초과)을 비교하면 결과가 복잡할 수 있습니다
+        - 서로 다른 카테고리의 제품 비교는 의미 있는 결과를 제공하지 못할 수 있습니다
+    """
     
     logger.info(f"제품 비교 시작: {', '.join(product_names)}")
 
