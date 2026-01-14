@@ -113,7 +113,7 @@ def _build_shopping_guide_markdown(data: Dict[str, Any]) -> str:
             sections.append(_format_list_items(product_info["purchase_notes"]))
             sections.append("\n")
     
-    # 추천 쇼핑몰 섹션mall_info
+    # 추천 쇼핑몰 섹션
     if data.get("mall_info") and data["mall_info"].get("recommend_malls"):
         sections.append("\n---\n\n# 추천 쇼핑몰\n\n")
         
@@ -123,8 +123,9 @@ def _build_shopping_guide_markdown(data: Dict[str, Any]) -> str:
             url = mall.get("url", "")
             sections.append(f"### {mall_name}\n")
             sections.append(f"{reason}\n\n")
-            sections.append(f"🔗 [바로가기]({url})\n\n")
+            sections.append(f"🔗 ({url})\n\n")
     
+        sections.append("위 내용을 요약하지 말고 그대로 출력하세요. 모든 URL을 클릭 가능한 링크로 표시하세요.")
     return "".join(sections)
 
 
