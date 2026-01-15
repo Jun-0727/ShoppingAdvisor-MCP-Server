@@ -137,9 +137,20 @@ def list_tools():
         ]
     }
 
-@app.post("/tools/{tool_name}")
-async def run_tool(tool_name: str, payload: Dict[str, Any]):
-    """MCP Tool을 실행하기 위한 엔드포인트"""
+async def execute_tool(tool_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    MCP Tool을 실행하고 결과를 반환하는 헬퍼 함수
+    
+    Args:
+        tool_name: 실행할 tool의 이름
+        arguments: tool에 전달할 인자들
+    
+    Returns:
+        실행 결과를 포함한 딕셔너리
+        
+    Raises:
+        HTTPException: tool을 찾을 수 없거나 실행 중 오류 발생 시
+    """
 
     # 1. Tool 존재 여부 확인
     tool = MCP_TOOLS.get(tool_name)
@@ -162,7 +173,9 @@ async def run_tool(tool_name: str, payload: Dict[str, Any]):
             product_info = await tool(product_name=product_name)
             
             result = format_product_info_response(product_data=product_info)
-
+            
+            if result is None:
+                return format_error_response(error_message="올바른 제품명을 입력해주세요.")
 
         elif tool_name == "create_shopping_guide":
             product_name = payload.get("product_name")
@@ -175,6 +188,9 @@ async def run_tool(tool_name: str, payload: Dict[str, Any]):
             guide_data = await tool(product_name=product_name)
             
             result = format_shopping_guide_response(guide_data=guide_data)
+
+            if result is None:
+                return format_error_response(error_message="올바른 제품명을 입력해주세요.")
 
         elif tool_name == "compare_products":
             product_list = payload.get("product_list")
@@ -190,6 +206,8 @@ async def run_tool(tool_name: str, payload: Dict[str, Any]):
 
             result = format_comparison_response(comparison_data=comparison_data)
 
+            if result is None:
+                return format_error_response(error_message="올바른 제품명을 입력해주세요.")
 
         else:
             raise HTTPException(
@@ -202,11 +220,20 @@ async def run_tool(tool_name: str, payload: Dict[str, Any]):
             return format_error_response(error_message="잠시 후 다시 시도해주세요.")
 
         return result
-
+    
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in {tool_name}: {e}", exc_info=True)
         return format_error_response(str(e))
 
+@app.post("/tools/{tool_name}")
+async def run_tool(tool_name: str, payload: Dict[str, Any]):
+    """
+    MCP Tool을 실행하기 위한 REST API 엔드포인트
+    """
+    logger.info(f"REST API - Tool 호출: {tool_name}")
+    return await execute_tool(tool_name, payload)
 
 # Health check
 @app.get("/health")
@@ -264,21 +291,67 @@ async def process_mcp_message(body: dict) -> dict:
         tool_name = params.get('name')
         arguments = params.get('arguments', {})
         
-        result_text = f"도구 '{tool_name}' 실행 완료: {json.dumps(arguments, ensure_ascii=False)}"
+        logger.info(f"JSON-RPC - Tool 호출: {tool_name}, 인자: {arguments}")
         
-        return {
-            "jsonrpc": "2.0",
-            "id": body.get("id"),
-            "result": {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": result_text
-                    }
-                ]
+        try:
+            # execute_tool 함수를 사용하여 tool 실행
+            result = await execute_tool(tool_name, arguments)
+            
+            # 결과를 JSON 문자열로 변환 (MCP 프로토콜 형식)
+            if isinstance(result, dict):
+                result_text = json.dumps(result, ensure_ascii=False, indent=2)
+            else:
+                result_text = str(result)
+            
+            return {
+                "jsonrpc": "2.0",
+                "id": body.get("id"),
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": result_text
+                        }
+                    ]
+                }
             }
-        }
-    
+            
+        except HTTPException as e:
+            logger.error(f"Tool 실행 중 HTTPException: {tool_name}", exc_info=True)
+            error_response = format_error_response("잠시 후 다시 시도해주세요.")
+            error_text = json.dumps(error_response, ensure_ascii=False, indent=2)
+            
+            return {
+                "jsonrpc": "2.0",
+                "id": body.get("id"),
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": error_text
+                        }
+                    ]
+                }
+            }
+        
+        except Exception as e:
+            logger.error(f"Tool 실행 중 오류: {tool_name}", exc_info=True)
+            error_response = format_error_response("잠시 후 다시 시도해주세요.")
+            error_text = json.dumps(error_response, ensure_ascii=False, indent=2)
+            
+            return {
+                "jsonrpc": "2.0",
+                "id": body.get("id"),
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": error_text
+                        }
+                    ]
+                }
+            }
+
     # 알 수 없는 메서드
     else:
         return {
