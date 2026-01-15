@@ -151,25 +151,30 @@ def _build_comparison_markdown(data: Dict[str, Any]) -> str:
     if data.get("products"):
         products = data["products"]
         product_names = " vs ".join(products)
-        sections.append(f"# {product_names} 비교\n\n")
+        sections.append(f"# 🔍 {product_names} 비교\n\n")
     
     # 비교 테이블
     if data.get("comparison_table"):
-        sections.append("## 상세 비교\n\n")
+        sections.append("## 📊 상세 비교\n\n")
         
         comparison_table = data["comparison_table"]
         
-        for category, product_details in comparison_table.items():
+        category_count = len(comparison_table)
+        for idx, (category, product_details) in enumerate(comparison_table.items(), 1):
             sections.append(f"### {category}\n\n")
             
             for product_name, description in product_details.items():
                 sections.append(f"**{product_name}**\n")
                 sections.append(f"{description}\n\n")
+            
+            # 마지막 카테고리가 아니면 구분선 추가
+            if idx < category_count:
+                sections.append("---\n\n")
     
     # 종합 평가
     if data.get("overall_summary"):
         sections.append("---\n\n")
-        sections.append("## 종합 평가\n\n")
+        sections.append("## 🎯 종합 평가\n\n")
         sections.append(f"{data['overall_summary']}\n")
     
     return "".join(sections)
