@@ -11,11 +11,6 @@ import os
 import logging
 import json
 from typing import Any, Dict
-
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS")
-
-# 로깅 설정
-from .logging_config import setup_logging
 from .utils.formatter import (
     format_product_info_response, 
     format_shopping_guide_response, 
@@ -23,6 +18,8 @@ from .utils.formatter import (
     format_error_response
 )
 
+# 로깅 설정
+from .logging_config import setup_logging
 setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
@@ -34,6 +31,8 @@ app = FastAPI(
 )
 
 # CORS 설정
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -49,22 +48,16 @@ MCP_TOOLS = {
     "compare_products": compare_products,
 }
 
-@app.get("/.well-known/mcp.json")
-async def mcp_info():
-    return {
-  "name": "Smart Shopping Advisor MCP Server",
-  "description": "온라인 쇼핑 의사결정을 돕는 MCP 서버",
-  "version": "1.0.0",
-  "tools": [
+TOOLS_INFO = [
             {
                 "name": "get_product",
-                "description": "제품명 또는 카테고리를 기반으로 제품 정보를 제공합니다.",
+                "description": "제품명을 기반으로 제품의 특징, 장점, 단점, 구매 시 확인사항을 제공합니다.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "product_name": {
                             "type": "string",
-                            "description": "조회할 제품의 이름"
+                            "description": "조회할 제품의 이름 또는 카테고리 (예: 'iPhone 15', '노트북', '무선 이어폰')"
                         }
                     },
                     "required": ["product_name"]
@@ -72,13 +65,13 @@ async def mcp_info():
             },
             {
                 "name": "create_shopping_guide",
-                "description": "제품 구매 가이드를 생성합니다.",
+                "description": "제품 구매 가이드를 생성하여 선택 기준, 주의사항, 추천 쇼핑몰 등을 제공합니다.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "product_name": {
                             "type": "string",
-                            "description": "구매 가이드를 생성할 제품명"
+                            "description": "구매 가이드를 생성할 제품명 (예: '4K 모니터', '공기청정기', '커피머신')"
                         }
                     },
                     "required": ["product_name"]
@@ -86,23 +79,34 @@ async def mcp_info():
             },
             {
                 "name": "compare_products",
-                "description": "여러 제품을 비교합니다.",
+                "description": "2개 이상의 제품을 비교하여 각 제품의 장단점, 사양 비교, 사용 사례별 추천을 제공합니다.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "product_names": {
+                        "product_list": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "비교할 제품명 리스트"
+                            "description": "비교할 제품명 리스트 (최소 2개, 권장 2-5개, 예: ['iPhone 15', 'Galaxy S24'])"
+                        },
+                        "comparison_points": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "(선택사항) 비교할 특정 항목 리스트 (예: ['카메라 성능', '배터리 수명', '가격'])"
                         }
                     },
-                    "required": ["product_names"]
+                    "required": ["product_list"]
                 }
             }
         ]
 
-}
-
+@app.get("/.well-known/mcp.json")
+async def mcp_info():
+    return {
+        "name": "Smart Shopping Advisor MCP Server",
+        "description": "온라인 쇼핑 의사결정을 돕는 MCP 서버",
+        "version": "1.0.0",
+        "tools": TOOLS_INFO
+    }
 
 @app.get("/tools")
 def list_tools():
@@ -133,12 +137,9 @@ def list_tools():
         ]
     }
 
-
 @app.post("/tools/{tool_name}")
 async def run_tool(tool_name: str, payload: Dict[str, Any]):
-    """
-    MCP Tool을 실행하기 위한 엔드포인트
-    """
+    """MCP Tool을 실행하기 위한 엔드포인트"""
 
     # 1. Tool 존재 여부 확인
     tool = MCP_TOOLS.get(tool_name)
@@ -155,7 +156,7 @@ async def run_tool(tool_name: str, payload: Dict[str, Any]):
             if not product_name:
                 raise HTTPException(
                     status_code=400,
-                    detail="product_name is required"
+                    detail="제품명을 입력해주세요."
                 )
 
             product_info = await tool(product_name=product_name)
@@ -168,7 +169,7 @@ async def run_tool(tool_name: str, payload: Dict[str, Any]):
             if not product_name:
                 raise HTTPException(
                     status_code=400,
-                    detail="product_name is required"
+                    detail="제품명을 입력해주세요."
                 )
 
             guide_data = await tool(product_name=product_name)
@@ -182,7 +183,7 @@ async def run_tool(tool_name: str, payload: Dict[str, Any]):
             if not product_list or not isinstance(product_list, list):
                 raise HTTPException(
                     status_code=400,
-                    detail="product_list is required"
+                    detail="제품명을 입력해주세요."
                 )
 
             comparison_data = await tool(product_list=product_list, comparison_points=comparison_points)
@@ -193,7 +194,7 @@ async def run_tool(tool_name: str, payload: Dict[str, Any]):
         else:
             raise HTTPException(
                 status_code=400,
-                detail="Unsupported tool"
+                detail="지원하지 않는 Tool 입니다."
             )
 
         # 3. 결과 검증
@@ -248,51 +249,7 @@ async def process_mcp_message(body: dict) -> dict:
     
     # tools/list 메서드
     elif method == 'tools/list':
-        tools = [
-            {
-                "name": "get_product",
-                "description": "제품명 또는 카테고리를 기반으로 제품 정보를 제공합니다.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "product_name": {
-                            "type": "string",
-                            "description": "조회할 제품의 이름"
-                        }
-                    },
-                    "required": ["product_name"]
-                }
-            },
-            {
-                "name": "create_shopping_guide",
-                "description": "제품 구매 가이드를 생성합니다.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "product_name": {
-                            "type": "string",
-                            "description": "구매 가이드를 생성할 제품명"
-                        }
-                    },
-                    "required": ["product_name"]
-                }
-            },
-            {
-                "name": "compare_products",
-                "description": "여러 제품을 비교합니다.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "product_names": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "비교할 제품명 리스트"
-                        }
-                    },
-                    "required": ["product_names"]
-                }
-            }
-        ]
+        tools = TOOLS_INFO
         
         return {
             "jsonrpc": "2.0",
@@ -409,7 +366,7 @@ async def handle_message(request: Request):
 async def root():
     """루트 GET 요청 - 서버 정보 반환"""
     return {
-        "name": "shopping-advisor-mcp",
+        "name": "shopping-advisor-mcp-server",
         "version": "0.1.0",
         "protocol": "streamable-http",
     }
