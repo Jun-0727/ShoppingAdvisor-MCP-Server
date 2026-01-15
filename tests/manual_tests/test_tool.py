@@ -7,7 +7,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from shopping_advisor.server import (
+from shopping_advisor.utils.tool import (
     mcp,
     get_product,
     create_shopping_guide,

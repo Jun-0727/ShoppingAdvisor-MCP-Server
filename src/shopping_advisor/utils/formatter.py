@@ -19,6 +19,19 @@ def format_mcp_response(data):
     return response
 
 
+def format_error_response(error_message: str):
+    """에러 응답 형식"""
+    return {
+        "content": [
+            {
+                "type": "text",
+                "text": error_message
+            }
+        ],
+        "isError": True
+    }
+
+
 def format_product_info_response(product_data: Dict[str, Any]) -> Dict[str, Any]:
     """제품 정보 데이터를 MCP 서버 응답 형태로 포맷팅합니다."""
 
