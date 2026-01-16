@@ -1,18 +1,22 @@
-"""
-Streamable HTTP 전송을 지원하는 MCP 서버
+""" Streamable HTTP 전송을 지원하는 MCP 서버
+
 - 단일 엔드포인트 (/mcp)에서 GET/POST 모두 처리
 - 세션 없이 요청-응답 패턴으로 동작
 - POST: JSON-RPC 메시지 (클라이언트 → 서버)
+- GET: SSE 스트림 (서버 → 클라이언트)
 """
+
 import os
 import uvicorn
 import logging
+import asyncio
 import json
 
 from typing import Any, Dict, Optional
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sse_starlette.sse import EventSourceResponse
 
 from .utils.tool import TOOLS_INFO
 from .utils.formatter import JsonRpcFormat, ResponseFormat, MarkdownFormat
@@ -42,8 +46,7 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["Mcp-Session-Id"]
+    allow_headers=["*"]
 )
 
 
@@ -52,7 +55,7 @@ app.add_middleware(
 # ============================================================
 
 async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """Tool 실행 로직"""
+    """ Tool 실행 로직 """
     
     # tool 유효성 검사
     if not tool_name:
@@ -111,7 +114,7 @@ async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
 # ============================================================
 
 async def process_mcp_message(body: dict) -> dict:
-    """MCP JSON-RPC 메시지 처리"""
+    """ MCP JSON-RPC 메시지 처리 """
     method = body.get("method")
     params = body.get("params", {})
     msg_id = body.get("id")
@@ -121,9 +124,10 @@ async def process_mcp_message(body: dict) -> dict:
     # ---- initialize ----
     if method == "initialize":
         initialize_info = {
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": "2025-03-26",
                 "capabilities": {
-                    "tools": {"listChanged": True}
+                    "tools": {"listChanged": True},
+                    "resources": {}
                 },
                 "serverInfo": {
                     "name": "shopping-advisor",
@@ -225,9 +229,42 @@ async def mcp_post(request: Request):
             status_code=500
             )
 
+@app.get("/mcp")
+async def mcp_get(request: Request):
+    """ GET /mcp - Streamable HTTP (SSE)
+    
+    - Stateless
+    - 서버는 상태를 저장하지 않음
+    - 연결 유지 + keep-alive만 제공
+    """
+    accept_header = request.headers.get("accept", "")
+
+    if "text/event-stream" not in accept_header:
+        return Response(
+            status_code=406,
+            headers={"Allow": "POST"}
+        )
+
+    async def event_generator():
+        try:
+            while not await request.is_disconnected():
+                await asyncio.sleep(30)
+                yield {"comment": "keep-alive"}
+
+        except asyncio.CancelledError:
+            logger.info("SSE connection cancelled")
+
+    return EventSourceResponse(
+        event_generator(),
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
 @app.options("/mcp")
 async def mcp_options():
-    """OPTIONS /mcp - CORS preflight"""
+    """ OPTIONS /mcp - CORS preflight """
     return Response(
         status_code=204,
         headers={
@@ -239,12 +276,12 @@ async def mcp_options():
 
 
 # ============================================================
-# 보조 엔드포인트 (선택적)
+# 보조 엔드포인트
 # ============================================================
 
 @app.get("/")
 async def root():
-    """루트 - 서버 정보"""
+    """ 루트 - 서버 정보 """
     return {
         "name": "shopping-advisor-mcp-server",
         "version": "0.1.0",
@@ -254,12 +291,12 @@ async def root():
 
 @app.get("/health")
 async def health():
-    """헬스 체크"""
+    """ 헬스 체크 """
     return {"status": "healthy"}
 
 @app.get("/.well-known/mcp.json")
 async def mcp_manifest():
-    """MCP 서버 매니페스트"""
+    """ MCP 서버 매니페스트 """
     return {
         "name": "Shopping Advisor MCP Server",
         "description": "온라인 쇼핑 의사결정을 돕는 MCP 서버",
