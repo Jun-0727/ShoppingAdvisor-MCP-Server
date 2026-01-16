@@ -14,8 +14,58 @@ from .gpt_api import (
     compare_products_request
 )
 
-
 ERROR_MESSAGE = "잠시 후 다시 시도해주세요."
+
+TOOLS_INFO = [
+    {
+        "name": "get_product",
+        "description": "제품명을 기반으로 제품의 특징, 장점, 단점, 구매 시 확인사항을 제공합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "product_name": {
+                    "type": "string",
+                    "description": "조회할 제품의 이름 또는 카테고리"
+                }
+            },
+            "required": ["product_name"]
+        }
+    },
+    {
+        "name": "create_shopping_guide",
+        "description": "제품 구매 가이드를 생성하여 선택 기준, 주의사항, 추천 쇼핑몰 등을 제공합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "product_name": {
+                    "type": "string",
+                    "description": "구매 가이드를 생성할 제품명"
+                }
+            },
+            "required": ["product_name"]
+        }
+    },
+    {
+        "name": "compare_products",
+        "description": "2개 이상의 제품을 비교하여 각 제품의 장단점, 사양 비교, 사용 사례별 추천을 제공합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "product_list": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "비교할 제품명 리스트 (최소 2개)"
+                },
+                "comparison_points": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "(선택사항) 비교할 특정 항목 리스트"
+                }
+            },
+            "required": ["product_list"]
+        }
+    }
+]
 
 # 로깅 설정
 setup_logging(log_level="INFO")

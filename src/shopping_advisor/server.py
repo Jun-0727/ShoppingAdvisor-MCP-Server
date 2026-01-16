@@ -1,37 +1,44 @@
 """
-HTTP 전송을 지원하는 MCP 서버
+Streamable HTTP 전송을 지원하는 MCP 서버
+- 단일 엔드포인트 (/mcp)에서 GET/POST 모두 처리
+- GET: SSE 스트림 (서버 → 클라이언트)
+- POST: JSON-RPC 메시지 (클라이언트 → 서버)
 """
-from fastapi import FastAPI, Request, Header, HTTPException, Depends
-from fastapi.responses import JSONResponse, StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from .utils.tool import get_product, create_shopping_guide, compare_products
-
-import uvicorn
 import os
+import asyncio
+import uuid
+import uvicorn
 import logging
 import json
-from typing import Any, Dict
-from .utils.formatter import (
-    format_product_info_response, 
-    format_shopping_guide_response, 
-    format_comparison_response,
-    format_error_response
+
+from typing import Any, Dict, Optional
+from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from sse_starlette.sse import EventSourceResponse
+
+from .utils.tool import TOOLS_INFO
+from .utils.formatter import JsonRpcFormat, ResponseFormat, MarkdownFormat
+from .logging_config import setup_logging
+from .utils.tool import (
+    get_product, 
+    create_shopping_guide, 
+    compare_products
 )
 
 # 로깅 설정
-from .logging_config import setup_logging
 setup_logging(log_level="INFO")
 logger = logging.getLogger(__name__)
 
 # FastAPI 앱 생성
 app = FastAPI(
     title="Shopping Advisor MCP Server",
-    description="Smart shopping decision support MCP server",
+    description="Streamable HTTP MCP Server",
     version="0.1.0"
 )
 
 # CORS 설정
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,416 +46,379 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"]
+    expose_headers=["Mcp-Session-Id"]
 )
 
-MCP_TOOLS = {
-    "get_product": get_product,
-    "create_shopping_guide": create_shopping_guide,
-    "compare_products": compare_products,
-}
-
-TOOLS_INFO = [
-            {
-                "name": "get_product",
-                "description": "제품명을 기반으로 제품의 특징, 장점, 단점, 구매 시 확인사항을 제공합니다.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "product_name": {
-                            "type": "string",
-                            "description": "조회할 제품의 이름 또는 카테고리 (예: 'iPhone 15', '노트북', '무선 이어폰')"
-                        }
-                    },
-                    "required": ["product_name"]
-                }
-            },
-            {
-                "name": "create_shopping_guide",
-                "description": "제품 구매 가이드를 생성하여 선택 기준, 주의사항, 추천 쇼핑몰 등을 제공합니다.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "product_name": {
-                            "type": "string",
-                            "description": "구매 가이드를 생성할 제품명 (예: '4K 모니터', '공기청정기', '커피머신')"
-                        }
-                    },
-                    "required": ["product_name"]
-                }
-            },
-            {
-                "name": "compare_products",
-                "description": "2개 이상의 제품을 비교하여 각 제품의 장단점, 사양 비교, 사용 사례별 추천을 제공합니다.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "product_list": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "비교할 제품명 리스트 (최소 2개, 권장 2-5개, 예: ['iPhone 15', 'Galaxy S24'])"
-                        },
-                        "comparison_points": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "(선택사항) 비교할 특정 항목 리스트 (예: ['카메라 성능', '배터리 수명', '가격'])"
-                        }
-                    },
-                    "required": ["product_list"]
-                }
-            }
-        ]
-
-@app.get("/.well-known/mcp.json")
-async def mcp_info():
-    return {
-        "name": "Smart Shopping Advisor MCP Server",
-        "description": "온라인 쇼핑 의사결정을 돕는 MCP 서버",
-        "version": "1.0.0",
-        "tools": TOOLS_INFO
-    }
-
-@app.get("/tools")
-def list_tools():
-    return {
-        "tools": [
-            {
-                "name": "get_product",
-                "description": "제품 정보 조회",
-                "input_schema": {
-                    "product_name": "string"
-                }
-            },
-            {
-                "name": "create_shopping_guide",
-                "description": "구매 가이드 생성",
-                "input_schema": {
-                    "product_name": "string"
-                }
-            },
-            {
-                "name": "compare_products",
-                "description": "제품 비교",
-                "input_schema": {
-                    "product_names": ["string"],
-                    "comparison_points": ["string"]
-                }
-            }
-        ]
-    }
-
-async def execute_tool(tool_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    MCP Tool을 실행하고 결과를 반환하는 헬퍼 함수
+# ============================================================
+# 세션 관리
+# ============================================================
+class SessionManager:
+    def __init__(self):
+        self.sessions: Dict[str, Dict[str, Any]] = {}
     
-    Args:
-        tool_name: 실행할 tool의 이름
-        arguments: tool에 전달할 인자들
+    def create_session(self) -> str:
+        """새 세션 생성"""
+        session_id = str(uuid.uuid4())
+        self.sessions[session_id] = {
+            "queue": asyncio.Queue(),
+            "created_at": asyncio.get_event_loop().time(),
+            "initialized": False
+        }
+        logger.info(f"Session created: {session_id}")
+        return session_id
     
-    Returns:
-        실행 결과를 포함한 딕셔너리
-        
-    Raises:
-        HTTPException: tool을 찾을 수 없거나 실행 중 오류 발생 시
-    """
+    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """세션 조회"""
+        return self.sessions.get(session_id)
+    
+    def delete_session(self, session_id: str) -> bool:
+        """세션 삭제"""
+        if session_id in self.sessions:
+            del self.sessions[session_id]
+            logger.info(f"Session deleted: {session_id}")
+            return True
+        return False
+    
+    def get_queue(self, session_id: str) -> Optional[asyncio.Queue]:
+        """세션의 메시지 큐 조회"""
+        session = self.get_session(session_id)
+        return session["queue"] if session else None
 
-    # 1. Tool 존재 여부 확인
-    tool = MCP_TOOLS.get(tool_name)
-    if not tool:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Tool '{tool_name}' not found"
-        )
+session_manager = SessionManager()
 
+# ============================================================
+# Tool 실행 함수 (실제 구현은 import 해서 사용)
+# ============================================================
+async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Tool 실행 로직"""
+    # tool 유효성 검사
+    if not tool_name:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
+    
     try:
-        # 2. Tool별 인자 처리
         if tool_name == "get_product":
-            product_name = payload.get("product_name")
+            product_name = arguments.get("product_name", "")
+
+            # 제품명 유효성 검사
             if not product_name:
-                raise HTTPException(
-                    status_code=400,
-                    detail="제품명을 입력해주세요."
-                )
-
-            product_info = await tool(product_name=product_name)
+                raise HTTPException(status_code=400, detail="제품명을 입력해주세요.")
             
-            result = format_product_info_response(product_data=product_info)
+            # 제품 정보 조회
+            product_json = await get_product(product_name=product_name)
+            result = MarkdownFormat.product_info(product_json)
             
-            if result is None:
-                return format_error_response(error_message="올바른 제품명을 입력해주세요.")
-
         elif tool_name == "create_shopping_guide":
-            product_name = payload.get("product_name")
+            product_name = arguments.get("product_name", "")
+
+            # 제품명 유효성 검사
             if not product_name:
-                raise HTTPException(
-                    status_code=400,
-                    detail="제품명을 입력해주세요."
-                )
-
-            guide_data = await tool(product_name=product_name)
+                raise HTTPException(status_code=400, detail="제품명을 입력해주세요.")
             
-            result = format_shopping_guide_response(guide_data=guide_data)
-
-            if result is None:
-                return format_error_response(error_message="올바른 제품명을 입력해주세요.")
-
+            shopping_guide_json = await create_shopping_guide(product_name=product_name)
+            result = MarkdownFormat.shopping_guide(shopping_guide_json)
+        
         elif tool_name == "compare_products":
-            product_list = payload.get("product_list")
-            comparison_points = payload.get("comparison_points")
+            product_list = arguments.get("product_list", [])
+            comparison_points = arguments.get("comparison_points", [])
 
+            # 제품 리스트 유효성 검사
             if not product_list or not isinstance(product_list, list):
-                raise HTTPException(
-                    status_code=400,
-                    detail="제품명을 입력해주세요."
-                )
-
-            comparison_data = await tool(product_list=product_list, comparison_points=comparison_points)
-
-            result = format_comparison_response(comparison_data=comparison_data)
-
-            if result is None:
-                return format_error_response(error_message="올바른 제품명을 입력해주세요.")
-
+                raise HTTPException(status_code=400, detail="제품명을 입력해주세요.")
+            
+            comparison_data_json = await compare_products(product_list=product_list, comparison_points=comparison_points)
+            result = MarkdownFormat.comparison_data(comparison_data_json)
+        
         else:
-            raise HTTPException(
-                status_code=400,
-                detail="지원하지 않는 Tool 입니다."
-            )
+            raise ValueError(f"Unknown tool: {tool_name}")
 
-        # 3. 결과 검증
-        if result is None:
-            return format_error_response(error_message="잠시 후 다시 시도해주세요.")
-
-        return result
+        return ResponseFormat.success(result)
     
     except HTTPException:
         raise
+
     except Exception as e:
         logger.error(f"Error in {tool_name}: {e}", exc_info=True)
-        return format_error_response(str(e))
-
-@app.post("/tools/{tool_name}")
-async def run_tool(tool_name: str, payload: Dict[str, Any]):
-    """
-    MCP Tool을 실행하기 위한 REST API 엔드포인트
-    """
-    logger.info(f"REST API - Tool 호출: {tool_name}")
-    return await execute_tool(tool_name, payload)
-
-# Health check
-@app.get("/health")
-async def health():
-    """헬스 체크 엔드포인트"""
-    return {
-        "status": "healthy",
-        "service": "shopping-advisor-mcp",
-        "version": "0.1.0"
-    }
-
-# MCP 메시지 처리 함수
-async def process_mcp_message(body: dict) -> dict:
-    """MCP 메시지 처리 로직"""
-    method = body.get('method')
-    params = body.get('params', {})
+        return ResponseFormat.error("잠시 후 다시 시도해주세요.")
     
-    logger.debug(f"Processing method: {method}")
-    logger.debug(f"Params: {json.dumps(params, indent=2)}")
+# ============================================================
+# MCP 메시지 처리
+# ============================================================
+async def process_mcp_message(body: dict, session_id: Optional[str] = None) -> dict:
+    """MCP JSON-RPC 메시지 처리"""
+    method = body.get("method")
+    params = body.get("params", {})
+    msg_id = body.get("id")
     
-    # initialize 메서드
-    if method == 'initialize':
-        client_protocol = params.get('protocolVersion', '2025-11-25')
-
-        return {
-            "jsonrpc": "2.0",
-            "id": body.get("id"),
-            "result": {
-                "protocolVersion": "0.1.0",
+    logger.info(f"Processing method: {method}, id: {msg_id}")
+    
+    # ---- initialize ----
+    if method == "initialize":
+        initialize_info = {
+                "protocolVersion": "2024-11-05",
                 "capabilities": {
-                    "tools": {},
-                    "prompts": {}
+                    "tools": {"listChanged": True}
                 },
                 "serverInfo": {
                     "name": "shopping-advisor",
                     "version": "0.1.0"
                 }
             }
-        }
+        return JsonRpcFormat.success(msg_id=msg_id, result=initialize_info)
     
-    # tools/list 메서드
-    elif method == 'tools/list':
-        tools = TOOLS_INFO
-        
-        return {
-            "jsonrpc": "2.0",
-            "id": body.get("id"),
-            "result": {
-                "tools": tools
-            }
-        }
+    # ---- notifications/initialized ----
+    elif method == "notifications/initialized":
+        # 알림이므로 응답 없음 (202 Accepted)
+        return None
     
-    # tools/call 메서드
-    elif method == 'tools/call':
-        tool_name = params.get('name')
-        arguments = params.get('arguments', {})
+    # ---- tools/list ----
+    elif method == "tools/list":
+        return JsonRpcFormat.success(msg_id=msg_id, result={"tools": TOOLS_INFO})
+    
+    # ---- tools/call ----
+    elif method == "tools/call":
+        tool_name = params.get("name")
+        arguments = params.get("arguments", {})
         
-        logger.info(f"JSON-RPC - Tool 호출: {tool_name}, 인자: {arguments}")
+        logger.info(f"Tool call: {tool_name}, args: {arguments}")
         
         try:
-            # execute_tool 함수를 사용하여 tool 실행
-            result = await execute_tool(tool_name, arguments)
+            tool_output = await execute_tool(tool_name, arguments)
+            tool_output_json = json.dumps(tool_output, ensure_ascii=False, indent=2)
+            result = ResponseFormat.success(content=tool_output_json)
             
-            # 결과를 JSON 문자열로 변환 (MCP 프로토콜 형식)
-            if isinstance(result, dict):
-                result_text = json.dumps(result, ensure_ascii=False, indent=2)
-            else:
-                result_text = str(result)
+            return JsonRpcFormat.success(msg_id=msg_id, result=result)
             
-            return {
-                "jsonrpc": "2.0",
-                "id": body.get("id"),
-                "result": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": result_text
-                        }
-                    ]
-                }
-            }
-            
-        except HTTPException as e:
-            logger.error(f"Tool 실행 중 HTTPException: {tool_name}", exc_info=True)
-            error_response = format_error_response("잠시 후 다시 시도해주세요.")
-            error_text = json.dumps(error_response, ensure_ascii=False, indent=2)
-            
-            return {
-                "jsonrpc": "2.0",
-                "id": body.get("id"),
-                "result": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": error_text
-                        }
-                    ]
-                }
-            }
-        
         except Exception as e:
-            logger.error(f"Tool 실행 중 오류: {tool_name}", exc_info=True)
-            error_response = format_error_response("잠시 후 다시 시도해주세요.")
-            error_text = json.dumps(error_response, ensure_ascii=False, indent=2)
+            logger.error(f"Tool execution error: {e}")
             
-            return {
-                "jsonrpc": "2.0",
-                "id": body.get("id"),
-                "result": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": error_text
-                        }
-                    ]
-                }
-            }
-
-    # 알 수 없는 메서드
+            return JsonRpcFormat.error(msg_id=msg_id, error=str(e))
+    
+    # ---- ping ----
+    elif method == "ping":
+        return JsonRpcFormat.success(msg_id=msg_id, result={})
+    
+    # ---- Unknown method ----
     else:
-        return {
-            "jsonrpc": "2.0",
-            "id": body.get("id"),
-            "error": {
-                "code": -32601,
-                "message": f"Method not found: {method}"
-            }
-        }
+        return JsonRpcFormat.error(msg_id=msg_id, error=f"Method not found: {method}")
+        
 
-# 루트 POST 엔드포인트 - JSON-RPC 메시지 처리
-@app.post("/")
-async def handle_messages(request: Request):
+# ============================================================
+# Streamable HTTP 엔드포인트 - /mcp
+# ============================================================
+
+@app.post("/mcp")
+async def mcp_post(request: Request):
     """
-    MCP JSON-RPC 메시지 처리
+    POST /mcp - 클라이언트가 서버로 메시지 전송
+    
+    - JSON-RPC request → JSON 또는 SSE 응답
+    - JSON-RPC notification/response → 202 Accepted
     """
+    # Accept 헤더 확인
+    accept_header = request.headers.get("accept", "")
+    session_id = request.headers.get("mcp-session-id")
+    
     try:
-        # Request 정보 로깅
-        logger.debug(f"Headers: {dict(request.headers)}")
+        body = await request.json()
+        logger.info(f"POST /mcp - Body: {json.dumps(body, indent=2)}")
         
-        # Body 읽기
-        body_bytes = await request.body()
-        logger.debug(f"Raw body: {body_bytes.decode('utf-8')}")
+        # 배치 요청 처리
+        if isinstance(body, list):
+            responses = []
+            for msg in body:
+                response = await process_mcp_message(msg, session_id)
+                if response:  # notification은 None 반환
+                    responses.append(response)
+            
+            if not responses:
+                return Response(status_code=202)
+            
+            return JSONResponse(
+                content=responses if len(responses) > 1 else responses[0],
+                headers={"Content-Type": "application/json"}
+            )
         
-        # JSON 파싱
-        body = json.loads(body_bytes)
-        logger.info(f"Received: {json.dumps(body, indent=2)}")
+        # 단일 메시지 처리
+        method = body.get("method")
         
-        # 메시지 처리
-        response = await process_mcp_message(body)
-        logger.info(f"Response: {json.dumps(response, indent=2)}")
+        # notification 또는 response인 경우
+        if body.get("id") is None or method in ["notifications/initialized", "notifications/cancelled"]:
+            await process_mcp_message(body, session_id)
+            return Response(status_code=202)
         
-        return JSONResponse(
-            content=response,
-            headers={
-                "Content-Type": "application/json",
-                "Cache-Control": "no-cache"
-            }
-        )
+        # request인 경우 - 응답 생성
+        response = await process_mcp_message(body, session_id)
         
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error: {e}")
-        return JSONResponse(
-            content={
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {
-                    "code": -32700,
-                    "message": "Parse error"
+        # initialize 요청인 경우 세션 ID 생성
+        response_headers = {"Content-Type": "application/json"}
+        if method == "initialize":
+            new_session_id = session_manager.create_session()
+            response_headers["Mcp-Session-Id"] = new_session_id
+        
+        # SSE 스트림 응답 지원 (Accept 헤더에 text/event-stream 포함 시)
+        """
+        if "text/event-stream" in accept_header:
+            async def generate_sse():
+                # 응답 전송
+                yield {
+                    "event": "message",
+                    "data": json.dumps(response)
                 }
-            }
+                
+                # 서버에서 추가 메시지가 있다면 여기서 전송
+                # (예: 진행 상황 업데이트 등)
+            
+            return EventSourceResponse(
+                generate_sse(),
+                headers=response_headers
+            )
+        """
+        
+        # 일반 JSON 응답
+        return JSONResponse(content=response, headers=response_headers)
+    
+    except json.JSONDecodeError:
+        return JSONResponse(
+            content=JsonRpcFormat.error(msg_id=None, error="Parse error"),
+            status_code=400
         )
+            
     except Exception as e:
-        logger.error(f"Error: {e}", exc_info=True)
+        logger.error(f"POST /mcp error: {e}", exc_info=True)
         return JSONResponse(
-            content={
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {
-                    "code": -32603,
-                    "message": str(e)
-                }
-            }
-        )
+            content=JsonRpcFormat.error(msg_id=None, error=str(e)),
+            status_code=500
+            )
 
-# OPTIONS 요청 처리
-@app.options("/")
-async def options_root():
-    return JSONResponse(
-        content={},
+@app.get("/mcp")
+async def mcp_get(request: Request):
+    """
+    GET /mcp - 서버가 클라이언트로 메시지 푸시 (SSE 스트림)
+    
+    - 서버 주도 알림/요청 전송용
+    - 클라이언트는 이 스트림을 열어두고 서버 메시지 수신
+    """
+    accept_header = request.headers.get("accept", "")
+    session_id = request.headers.get("mcp-session-id")
+    
+    # Accept 헤더 검증
+    if "text/event-stream" not in accept_header:
+        return Response(
+            status_code=405,
+            headers={"Allow": "POST"}
+        )
+    
+    # 세션 검증 (선택적)
+    if session_id and not session_manager.get_session(session_id):
+        return Response(status_code=404)
+    
+    async def event_generator():
+        """SSE 이벤트 생성기"""
+        event_id = 0
+        queue = session_manager.get_queue(session_id) if session_id else asyncio.Queue()
+        
+        try:
+            while True:
+                # 연결 확인
+                if await request.is_disconnected():
+                    logger.info(f"SSE disconnected: {session_id}")
+                    break
+                
+                try:
+                    # 큐에서 메시지 대기 (30초 타임아웃)
+                    message = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    event_id += 1
+                    
+                    yield {
+                        "event": "message",
+                        "id": str(event_id),
+                        "data": json.dumps(message)
+                    }
+                    
+                except asyncio.TimeoutError:
+                    # Keep-alive (주석 형태로 전송)
+                    yield {"comment": "keep-alive"}
+                    
+        except asyncio.CancelledError:
+            logger.info(f"SSE cancelled: {session_id}")
+    
+    return EventSourceResponse(
+        event_generator(),
+        headers={"Cache-Control": "no-cache"}
+    )
+
+@app.delete("/mcp")
+async def mcp_delete(request: Request):
+    """
+    DELETE /mcp - 세션 종료
+    
+    클라이언트가 세션을 명시적으로 종료할 때 사용
+    """
+    session_id = request.headers.get("mcp-session-id")
+    
+    if not session_id:
+        return Response(status_code=400)
+    
+    if session_manager.delete_session(session_id):
+        return Response(status_code=204)
+    else:
+        return Response(status_code=404)
+
+@app.options("/mcp")
+async def mcp_options():
+    """OPTIONS /mcp - CORS preflight"""
+    return Response(
+        status_code=204,
         headers={
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-            "Access-Control-Allow-Headers": "*"
+            "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Accept, Mcp-Session-Id",
+            "Access-Control-Expose-Headers": "Mcp-Session-Id"
         }
     )
 
-# Streamable HTTP specific endpoints
-@app.post("/message")  # 단수형도 추가
-async def handle_message(request: Request):
-    return await handle_messages(request)
+
+# ============================================================
+# 보조 엔드포인트 (선택적)
+# ============================================================
 
 @app.get("/")
 async def root():
-    """루트 GET 요청 - 서버 정보 반환"""
+    """루트 - 서버 정보"""
     return {
         "name": "shopping-advisor-mcp-server",
         "version": "0.1.0",
         "protocol": "streamable-http",
+        "mcp_endpoint": "/mcp"
     }
 
+
+@app.get("/health")
+async def health():
+    """헬스 체크"""
+    return {"status": "healthy"}
+
+
+@app.get("/.well-known/mcp.json")
+async def mcp_manifest():
+    """MCP 서버 매니페스트"""
+    return {
+        "name": "Shopping Advisor MCP Server",
+        "description": "온라인 쇼핑 의사결정을 돕는 MCP 서버",
+        "version": "0.1.0",
+        "protocol": "streamable-http",
+        "endpoint": "/mcp",
+        "tools": TOOLS_INFO
+    }
+
+
+# ============================================================
+# 메인 실행
+# ============================================================
 if __name__ == "__main__":
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=int(os.getenv('SERVER_PORT', 8000)),
-        log_level="info",
-        reload=False
+        port=int(os.getenv("SERVER_PORT", 8000)),
+        log_level="info"
     )

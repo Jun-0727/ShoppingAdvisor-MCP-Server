@@ -1799,6 +1799,7 @@ dependencies = [
     { name = "openai" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "sse-starlette" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1822,6 +1823,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "sse-starlette", specifier = "==2.1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
 ]
 provides-extras = ["dev"]
@@ -1846,15 +1848,16 @@ wheels = [
 
 [[package]]
 name = "sse-starlette"
-version = "3.1.2"
+version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "starlette" },
+    { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/da/34/f5df66cb383efdbf4f2db23cabb27f51b1dcb737efaf8a558f6f1d195134/sse_starlette-3.1.2.tar.gz", hash = "sha256:55eff034207a83a0eb86de9a68099bd0157838f0b8b999a1b742005c71e33618", size = 26303, upload-time = "2025-12-31T08:02:20.023Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2a/dc/f2c00e9bd7355134a88cd83ed984b664d0f187ea36f1bd47b310ae731e17/sse_starlette-2.1.0.tar.gz", hash = "sha256:ffff6e7d948f925f347e662be77af5783a6b93efce15d42c03004dcd7d6d91d3", size = 19297, upload-time = "2024-04-05T14:11:03.34Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b7/95/8c4b76eec9ae574474e5d2997557cebf764bcd3586458956c30631ae08f4/sse_starlette-3.1.2-py3-none-any.whl", hash = "sha256:cd800dd349f4521b317b9391d3796fa97b71748a4da9b9e00aafab32dda375c8", size = 12484, upload-time = "2025-12-31T08:02:18.894Z" },
+    { url = "https://files.pythonhosted.org/packages/15/51/faf3a6478876bfa30d28a9bfa60cf191fd79bfac79f7595a6d342e66c44a/sse_starlette-2.1.0-py3-none-any.whl", hash = "sha256:ea92bcb366c12482c1e23cab6b5afed19eb1320efe9ddfba8a0cf1f7f73ffba9", size = 9234, upload-time = "2024-04-05T14:11:01.248Z" },
 ]
 
 [[package]]
