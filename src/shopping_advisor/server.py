@@ -127,7 +127,8 @@ async def process_mcp_message(body: dict) -> dict:
                 "protocolVersion": "2025-03-26",
                 "capabilities": {
                     "tools": {"listChanged": True},
-                    "resources": {}
+                    "resources": {},
+                    "prompts": {}
                 },
                 "serverInfo": {
                     "name": "shopping-advisor",
@@ -162,7 +163,19 @@ async def process_mcp_message(body: dict) -> dict:
             logger.error(f"Tool execution error: {e}")
             
             return JsonRpcFormat.error(msg_id=msg_id, error=str(e))
-    
+        
+    # ---- resources/list ----
+    elif method == "resources/list":
+        return JsonRpcFormat.success(msg_id=msg_id, result={"resources": []})
+
+    # ---- resources/templates/list ----
+    elif method == "resources/templates/list":
+        return JsonRpcFormat.success(msg_id=msg_id, result={"resourceTemplates": []})
+
+    # ---- prompts/list ----
+    elif method == "prompts/list":
+        return JsonRpcFormat.success(msg_id=msg_id, result={"prompts": []})
+
     # ---- ping ----
     elif method == "ping":
         return JsonRpcFormat.success(msg_id=msg_id, result={})
